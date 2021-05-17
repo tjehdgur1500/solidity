@@ -23,6 +23,10 @@
  */
 #include <solc/CommandLineInterface.h>
 
+#if defined(SOLC_LSP_TCP)
+#include <solc/LSPTCPTransport.h>
+#endif
+
 #include "solidity/BuildInfo.h"
 
 #include <libsolidity/interface/Version.h>
@@ -864,6 +868,19 @@ bool CommandLineInterface::serveLSP()
 	};
 
 	std::unique_ptr<lsp::Transport> transport = make_unique<lsp::JSONTransport>(traceLevel, traceLogger);
+#if defined(SOLC_LSP_TCP)
+	if (m_args.count("lsp-port"))
+	{
+		unsigned const port = m_args.at("lsp-port").as<unsigned>();
+		if (port > 0xFFFF)
+		{
+			sout() << "LSP port number not in valid port range. " << endl;
+			return false;
+		}
+		transport = make_unique<lsp::LSPTCPTransport>(static_cast<unsigned short>(port), traceLevel, traceLogger);
+	}
+#endif
+
 	lsp::LanguageServer languageServer(traceLogger, move(transport));
 	return languageServer.run();
 }
