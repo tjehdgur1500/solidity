@@ -67,6 +67,7 @@ public:
 
 private:
 	bool compile();
+	bool serveLSP();
 	bool link();
 	void writeLinkedFiles();
 	/// @returns the ``// <identifier> -> name`` hint for library placeholders.

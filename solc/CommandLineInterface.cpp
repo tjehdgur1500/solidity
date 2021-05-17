@@ -35,6 +35,8 @@
 #include <libsolidity/interface/DebugSettings.h>
 #include <libsolidity/interface/ImportRemapper.h>
 #include <libsolidity/interface/StorageLayout.h>
+#include <libsolidity/lsp/LanguageServer.h>
+#include <libsolidity/lsp/Transport.h>
 
 #include <libyul/AssemblyStack.h>
 
@@ -51,6 +53,8 @@
 #include <libsolutil/CommonData.h>
 #include <libsolutil/CommonIO.h>
 #include <libsolutil/JSON.h>
+
+#include <range/v3/all.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -843,8 +847,32 @@ void CommandLineInterface::handleAst()
 	}
 }
 
+bool CommandLineInterface::serveLSP()
+{
+	std::unique_ptr<ofstream> traceLog;
+	if (m_args.count("lsp-trace"))
+		traceLog = make_unique<ofstream>(m_args.at("lsp-trace").as<string>(), std::ios::app);
+	else
+		traceLog = make_unique<ofstream>("/tmp/solc.lsp.log", std::ios::app);
+
+	auto const traceLevel = lsp::Trace::Messages;
+
+	auto const traceLogger = [&traceLog](string_view _msg)
+	{
+		solAssert(traceLog, "");
+		*traceLog << _msg << endl;
+	};
+
+	std::unique_ptr<lsp::Transport> transport = make_unique<lsp::JSONTransport>(traceLevel, traceLogger);
+	lsp::LanguageServer languageServer(traceLogger, move(transport));
+	return languageServer.run();
+}
+
 bool CommandLineInterface::actOnInput()
 {
+	// TODO(pr)
+	// if (m_args.count("lsp"))
+	// 	serveLSP();
 	if (m_options.input.mode == InputMode::StandardJson || m_options.input.mode == InputMode::Assembler)
 		// Already done in "processInput" phase.
 		return true;
