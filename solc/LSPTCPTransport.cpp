@@ -21,7 +21,8 @@
 #include <string>
 #include <iostream>
 
-namespace solidity::lsp {
+namespace solidity::lsp
+{
 
 using std::function;
 using std::nullopt;

@@ -29,7 +29,8 @@
 #include <string_view>
 #include <variant>
 
-namespace solidity::lsp {
+namespace solidity::lsp
+{
 
 using MessageID = Json::Value;
 

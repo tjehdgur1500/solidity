@@ -22,7 +22,8 @@
 #include <boost/asio.hpp>
 #include <optional>
 
-namespace solidity::lsp {
+namespace solidity::lsp
+{
 
 class LSPTCPTransport: public lsp::Transport {
 public:

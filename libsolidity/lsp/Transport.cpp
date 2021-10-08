@@ -36,7 +36,8 @@ using std::string;
 using std::string_view;
 using std::stringstream;
 
-namespace solidity::lsp {
+namespace solidity::lsp
+{
 
 JSONTransport::JSONTransport(istream& _in, ostream& _out, Trace _traceLevel, function<void(string_view)> _trace):
 	m_input{_in},
