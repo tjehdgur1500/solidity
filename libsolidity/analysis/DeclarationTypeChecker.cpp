@@ -25,6 +25,7 @@
 #include <liblangutil/ErrorReporter.h>
 
 #include <libsolutil/Algorithms.h>
+#include <libsolutil/Visitor.h>
 
 #include <range/v3/view/transform.hpp>
 
@@ -453,12 +454,54 @@ void DeclarationTypeChecker::endVisit(VariableDeclaration const& _variable)
 
 bool DeclarationTypeChecker::visit(UsingForDirective const& _usingFor)
 {
-	ContractDefinition const* library = dynamic_cast<ContractDefinition const*>(
-		_usingFor.libraryName().annotation().referencedDeclaration
-	);
+	UsingForDirective::LHS const& lhs = _usingFor.lhs();
 
-	if (!library || !library->isLibrary())
-		m_errorReporter.fatalTypeError(4357_error, _usingFor.libraryName().location(), "Library name expected.");
+	auto checkFunctionDefinition = [&](FunctionDefinition const* _functionDefinition, SourceLocation _location)
+	{
+		if (!_functionDefinition->isFree())
+			m_errorReporter.typeError(
+				4167_error,
+				_location,
+				"Only free functions can be bound to a type in a \"using\" statement"
+			);
+	};
+
+	std::visit(util::GenericVisitor{
+		[&](UsingForDirective::LibraryOrFunctionOrModule const& _libraryOrFunctionOrModule) {
+			Declaration const* decl = _libraryOrFunctionOrModule.name->annotation().referencedDeclaration;
+			auto location = _libraryOrFunctionOrModule.name->location();
+			solAssert(decl, "");
+			// TODO need to also allow library functions?
+			if (auto functionDefinition = dynamic_cast<FunctionDefinition const*>(decl))
+				checkFunctionDefinition(functionDefinition, location);
+			else if (auto library = dynamic_cast<ContractDefinition const*>(decl))
+			{
+				if (!library->isLibrary())
+					m_errorReporter.fatalTypeError(4357_error, location, "Library name expected.");
+			}
+			else if (dynamic_cast<ImportDirective const*>(decl))
+			{
+				// TODO do nothing?
+			}
+			else
+				m_errorReporter.fatalTypeError(8187_error, location, "Expected library name, free-function(s) name(s), module name or *." );
+		},
+		[&](UsingForDirective::FunctionList const& _functionList) {
+			solAssert(!_functionList.functions.empty(), "");
+			for (auto const& path: _functionList.functions)
+			{
+				solAssert(path, "");
+				checkFunctionDefinition(
+					dynamic_cast<FunctionDefinition const*>(path->annotation().referencedDeclaration),
+					path->location()
+				);
+			}
+
+		},
+		[&](UsingForDirective::Asterisk const&) {
+			// TODO Disable this for file level using statements
+		},
+	}, lhs);
 
 	if (_usingFor.typeName())
 		_usingFor.typeName()->accept(*this);

@@ -35,6 +35,7 @@
 #include <libsolutil/Algorithms.h>
 #include <libsolutil/StringUtils.h>
 #include <libsolutil/Views.h>
+#include <libsolutil/Visitor.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -3430,6 +3431,66 @@ void TypeChecker::endVisit(Literal const& _literal)
 
 void TypeChecker::endVisit(UsingForDirective const& _usingFor)
 {
+	auto checkFunctionDefinition = [&](FunctionDefinition const& _functionDefinition, SourceLocation _location)
+	{
+		TypeName const* typeName = _usingFor.typeName();
+		bool isAsterisk = !typeName;
+		solAssert(isAsterisk || typeName->annotation().type, "");
+		string usingForTypeName = isAsterisk ? "*" : typeName->annotation().type->toString();
+		solAssert(_functionDefinition.type(), "");
+
+		if (_functionDefinition.parameters().empty())
+			m_errorReporter.fatalTypeError(
+				4731_error,
+				_location,
+				"The function \"" + _functionDefinition.name() + "\" " +
+				"does not have any parameters, and therefore cannot be bound to the type \"" +
+				usingForTypeName + "\"."
+			);
+
+		auto const& functionType = dynamic_cast<FunctionType const&>(*_functionDefinition.type()).asBoundFunction();
+		solAssert(functionType && functionType->selfType(), "");
+		if (!isAsterisk && !_usingFor.typeName()->annotation().type->isImplicitlyConvertibleTo(*functionType->selfType()))
+			m_errorReporter.typeError(
+				3100_error,
+				_location,
+				"The function \"" + _functionDefinition.name() + "\" "+
+				"cannot be bound to the type \"" + _usingFor.typeName()->annotation().type->toString() +
+				"\" because the type cannot be implicitly converted to the first argument" +
+				" of the function (\"" + functionType->selfType()->toString() + "\")."
+			);
+	};
+
+	UsingForDirective::LHS const& lhs = _usingFor.lhs();
+	std::visit(util::GenericVisitor{
+		[&](UsingForDirective::LibraryOrFunctionOrModule const& _libraryOrFunctionOrModule) {
+			Declaration const* declaration = _libraryOrFunctionOrModule.name->annotation().referencedDeclaration;
+			if (auto functionDefinition = dynamic_cast<FunctionDefinition const*>(declaration))
+				checkFunctionDefinition(*functionDefinition, _libraryOrFunctionOrModule.name->location());
+		},
+		[&](UsingForDirective::FunctionList const& _functionList) {
+			for (auto const& path: _functionList.functions)
+			{
+				solAssert(path, "");
+				FunctionDefinition const* functionDefinition =
+					dynamic_cast<FunctionDefinition const*>(path->annotation().referencedDeclaration);
+				solAssert(functionDefinition, "");
+				checkFunctionDefinition(*functionDefinition, path->location());
+			}
+		},
+		[&](UsingForDirective::Asterisk const&) {
+			// TODO: when file level "using-for" is enabled, rewrite the error message.
+			// and potentially make it non-fatal.
+			if (m_currentContract)
+				m_errorReporter.fatalTypeError(
+					1308_error,
+					_usingFor.location(),
+					"\"using * for T;\" cannot be used inside contract definition"
+				);
+		},
+	}, lhs);
+
+	// TODO remove this when file level stuff is enabled.
 	if (m_currentContract->isInterface())
 		m_errorReporter.typeError(
 			9088_error,
