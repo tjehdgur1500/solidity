@@ -7,4 +7,4 @@ library L {
     }
 }
 // ----
-// TypeError 4357: (120-121): Library name expected.
+// TypeError 8187: (120-121): Expected library name, free-function(s) name(s), module name or *.
