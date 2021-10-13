@@ -21,6 +21,7 @@
 #pragma once
 
 #include <libyul/backends/evm/ControlFlowGraph.h>
+#include <libyul/ControlFlowSideEffects.h>
 
 namespace solidity::yul
 {
@@ -55,6 +56,7 @@ private:
 	ControlFlowGraphBuilder(
 		CFG& _graph,
 		AsmAnalysisInfo const& _analysisInfo,
+		std::map<YulString, ControlFlowSideEffects> const& _functionSideEffects,
 		Dialect const& _dialect
 	);
 	Stack const& visitFunctionCall(FunctionCall const&);
@@ -76,6 +78,7 @@ private:
 	);
 	CFG& m_graph;
 	AsmAnalysisInfo const& m_info;
+	std::map<YulString, ControlFlowSideEffects> const& m_functionSideEffects;
 	Dialect const& m_dialect;
 	CFG::BasicBlock* m_currentBlock = nullptr;
 	Scope* m_scope = nullptr;
