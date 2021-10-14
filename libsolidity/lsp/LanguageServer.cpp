@@ -127,10 +127,10 @@ vector<Declaration const*> allAnnotatedDeclarations(Identifier const* _identifie
 LanguageServer::LanguageServer(Logger _logger, unique_ptr<Transport> _transport):
 	m_client{move(_transport)},
 	m_handlers{
-		{"$/cancelRequest", {} }, // Don't do anything for now, as we're synchronous.
-		{"cancelRequest", {} }, // Don't do anything for now, as we're synchronous.
+		{"$/cancelRequest", [](auto, auto) {/*nothing for now as we are synchronous */} },
+		{"cancelRequest", [](auto, auto) {/*nothing for now as we are synchronous */} },
 		{"initialize", bind(&LanguageServer::handleInitialize, this, _1, _2)},
-		{"initialized", {} },
+		{"initialized", [](auto, auto) {} },
 		{"shutdown", [this](auto, auto) { m_shutdownRequested = true; }},
 		{"textDocument/definition", [this](auto _id, auto _args) { handleGotoDefinition(_id, _args); }},
 		{"textDocument/didChange", bind(&LanguageServer::handleTextDocumentDidChange, this, _1, _2)},
@@ -381,16 +381,25 @@ bool LanguageServer::run()
 {
 	while (!m_exitRequested && !m_client->closed())
 	{
-		if (optional<Json::Value> const jsonMessage = m_client->receive(); jsonMessage.has_value())
+		optional<Json::Value> const jsonMessage = m_client->receive();
+		if (!jsonMessage)
+			continue;
+
+		try
 		{
-			try
-			{
-				handleMessage(jsonMessage.value());
+			string const methodName = _jsonMessage["method"].asString();
+
+			MessageID const id = _jsonMessage["id"];
+
+			if (auto handler = valueOrDefault(m_handlers, methodName))
+				handler->second(id, _jsonMessage["params"]);
 			}
-			catch (exception const& e)
-			{
-				log("Unhandled exception caught when handling message. "s + e.what());
-			}
+			else
+				m_client->error(id, ErrorCode::MethodNotFound, "Unknown method " + methodName);
+		}
+		catch (exception const& e)
+		{
+			log("Unhandled exception caught when handling message. "s + e.what());
 		}
 	}
 	return m_shutdownRequested;
@@ -659,26 +668,6 @@ void LanguageServer::trace(string const& _message)
 {
 	if (m_trace >= Trace::Verbose && m_logger)
 		m_logger(_message);
-}
-
-void LanguageServer::handleMessage(Json::Value const& _jsonMessage)
-{
-	string const methodName = _jsonMessage["method"].asString();
-
-	MessageID const id = _jsonMessage["id"].isInt() ?
-		MessageID{to_string(_jsonMessage["id"].asInt())} :
-		_jsonMessage["id"].isString() ?
-			MessageID{_jsonMessage["id"].asString()} :
-			MessageID{};
-
-	auto const handler = m_handlers.find(methodName);
-	if (handler == m_handlers.end())
-		m_client->error(id, ErrorCode::MethodNotFound, "Unknown method " + methodName);
-	else if (handler->second)
-	{
-		Json::Value const& jsonArgs = _jsonMessage["params"];
-		handler->second(id, jsonArgs);
-	}
 }
 
 } // namespace solidity

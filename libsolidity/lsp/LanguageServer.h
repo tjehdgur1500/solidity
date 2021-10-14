@@ -79,12 +79,6 @@ public:
 	/// @return boolean indicating normal or abnormal termination.
 	bool run();
 
-	/// Handles a single JSON-RPC message in string form.
-	void handleMessage(std::string const& _message);
-
-	/// Handles a single JSON-RPC message.
-	void handleMessage(Json::Value const& _jsonMessage);
-
 protected:
 	void handleInitialize(MessageID _id, Json::Value const& _args);
 	void handleExit(MessageID _id, Json::Value const& _args);
