@@ -79,25 +79,10 @@ Json::Value toJsonRange(int _startLine, int _startColumn, int _endLine, int _end
 	return json;
 }
 
-Json::Value toJsonRange(SourceLocation const& _location)
-{
-	solAssert(_location.source, "");
-	auto const [startLine, startColumn] = _location.source->translatePositionToLineColumn(_location.start);
-	auto const [endLine, endColumn] = _location.source->translatePositionToLineColumn(_location.end);
-	return toJsonRange(startLine, startColumn, endLine, endColumn);
-}
-
-Json::Value toJson(boost::filesystem::path const& _basePath, SourceLocation const& _location)
-{
-	solAssert(_location.source.get() != nullptr, "");
-	Json::Value item = Json::objectValue;
-	item["uri"] = toFileURI(_basePath / boost::filesystem::path(_location.source->name()));
-	item["range"] = toJsonRange(_location);
-	return item;
-}
-
 constexpr int toDiagnosticSeverity(Error::Type _errorType)
 {
+	// TODO use severity
+
 	// 1=Error, 2=Warning, 3=Info, 4=Hint
 	switch (_errorType)
 	{
@@ -109,6 +94,7 @@ constexpr int toDiagnosticSeverity(Error::Type _errorType)
 		case Error::Type::TypeError:
 			return 1;
 		case Error::Type::Warning:
+		case Error::Type::Info:
 			return 2;
 	}
 	return 1;
@@ -161,6 +147,24 @@ DocumentPosition LanguageServer::extractDocumentPosition(Json::Value const& _jso
 	return dpos;
 }
 
+Json::Value LanguageServer::toJson(SourceLocation const& _location) const
+{
+	solAssert(_location.sourceName, "");
+	CharStream const& stream = m_compilerStack->charStream(*_location.sourceName);
+	auto const [startLine, startColumn] = stream.translatePositionToLineColumn(_location.start);
+	auto const [endLine, endColumn] = stream.translatePositionToLineColumn(_location.end);
+	return toJsonRange(startLine, startColumn, endLine, endColumn);
+}
+
+Json::Value LanguageServer::toJson(boost::filesystem::path const& _basePath, SourceLocation const& _location)
+{
+	solAssert(_location.sourceName);
+	Json::Value item = Json::objectValue;
+	item["uri"] = toFileURI(_basePath / boost::filesystem::path(*_location.sourceName));
+	item["range"] = toJson(_location);
+	return item;
+}
+
 void LanguageServer::changeConfiguration(Json::Value const& _settings)
 {
 	m_settingsObject = _settings;
@@ -182,10 +186,8 @@ bool LanguageServer::compile(string const& _path)
 		return false;
 	}
 
-	// Json::Value jsonInput;
-	// jsonInput.copy(m_settingsObject);
-
 	m_compilerStack.reset();
+	// TODO do we actually need the feature of reading from the filesystem?
 	m_compilerStack = make_unique<CompilerStack>(bind(&FileReader::readFile, ref(*m_fileReader), _1, _2));
 
 	StandardCompiler::InputsAndSettings inputsAndSettings = m_inputsAndSettings;
@@ -207,7 +209,7 @@ void LanguageServer::compileSourceAndReport(string const& _path)
 	params["diagnostics"] = Json::arrayValue;
 	for (shared_ptr<Error const> const& error: m_compilerStack->errors())
 	{
-		SourceReferenceExtractor::Message const message = SourceReferenceExtractor::extract(*error);
+		SourceReferenceExtractor::Message const message = SourceReferenceExtractor::extract(*m_compilerStack, *error);
 
 		Json::Value jsonDiag;
 		jsonDiag["source"] = "solc";
@@ -243,15 +245,14 @@ ASTNode const* LanguageServer::requestASTNode(DocumentPosition _filePos)
 	if (!m_compilerStack)
 		compile(_filePos.path);
 
-	auto file = m_fileReader->sourceCodes().find(_filePos.path);
-	if (file == m_fileReader->sourceCodes().end())
+	if (!m_fileReader->sourceCodes().count(_filePos.path))
 		return nullptr;
 
 	if (!m_compilerStack || m_compilerStack->state() < CompilerStack::AnalysisPerformed)
 		return nullptr;
 
 	SourceUnit const& sourceUnit = m_compilerStack->ast(_filePos.path);
-	auto const sourcePos = sourceUnit.location().source->translateLineColumnToPosition(_filePos.position.line, _filePos.position.column);
+	auto const sourcePos = m_compilerStack->charStream(_filePos.path).translateLineColumnToPosition(_filePos.position.line, _filePos.position.column);
 	if (!sourcePos.has_value())
 		return nullptr;
 
@@ -387,13 +388,11 @@ bool LanguageServer::run()
 
 		try
 		{
-			string const methodName = _jsonMessage["method"].asString();
-
-			MessageID const id = _jsonMessage["id"];
+			string const methodName = (*jsonMessage)["method"].asString();
+			MessageID const id = (*jsonMessage)["id"];
 
 			if (auto handler = valueOrDefault(m_handlers, methodName))
-				handler->second(id, _jsonMessage["params"]);
-			}
+				handler(id, (*jsonMessage)["params"]);
 			else
 				m_client->error(id, ErrorCode::MethodNotFound, "Unknown method " + methodName);
 		}
@@ -425,7 +424,8 @@ void LanguageServer::handleInitialize(MessageID _id, Json::Value const& _args)
 	}
 
 	m_basePath = boost::filesystem::path(rootPath);
-	m_fileReader = make_unique<FileReader>(m_basePath, FileReader::FileSystemPathSet{m_basePath});
+	std::vector<boost::filesystem::path> includePaths;
+	m_fileReader = make_unique<FileReader>(m_basePath, includePaths, FileReader::FileSystemPathSet{m_basePath});
 	if (_args["initializationOptions"].isObject())
 		changeConfiguration(_args["initializationOptions"]);
 
@@ -539,9 +539,8 @@ void LanguageServer::handleGotoDefinition(MessageID _id, Json::Value const& _arg
 	else if (auto const* importDirective = dynamic_cast<ImportDirective const*>(sourceNode))
 	{
 		auto const& path = *importDirective->annotation().absolutePath;
-		auto const i = m_fileReader->sourceCodes().find(path);
-		if (i != m_fileReader->sourceCodes().end())
-			locations.emplace_back(SourceLocation{0, 0, make_shared<CharStream>("", path)});
+		if (m_fileReader->sourceCodes().count(path))
+			locations.emplace_back(SourceLocation{0, 0, make_shared<string const>(path)});
 	}
 	else if (auto const* declaration = dynamic_cast<Declaration const*>(sourceNode))
 	{
@@ -590,14 +589,14 @@ void LanguageServer::handleTextDocumentHover(MessageID _id, Json::Value const& _
 {
 	auto const sourceNode = requestASTNode(extractDocumentPosition(_args));
 	string tooltipText = symbolHoverInformation(sourceNode);
-	if (!tooltipText.empty())
+	if (tooltipText.empty())
 	{
 		m_client->reply(_id, Json::nullValue);
 		return;
 	}
 
 	Json::Value reply = Json::objectValue;
-	reply["range"] = toJsonRange(sourceNode->location());
+	reply["range"] = toJson(sourceNode->location());
 	reply["contents"]["kind"] = "markdown";
 	reply["contents"]["value"] = move(tooltipText);
 	m_client->reply(_id, reply);
@@ -611,7 +610,7 @@ void LanguageServer::handleTextDocumentHighlight(MessageID _id, Json::Value cons
 	for (DocumentHighlight const& highlight: semanticHighlight(sourceNode, dpos.path))
 	{
 		Json::Value item = Json::objectValue;
-		item["range"] = toJsonRange(highlight.location);
+		item["range"] = toJson(highlight.location);
 		if (highlight.kind != DocumentHighlightKind::Unspecified)
 			item["kind"] = int(highlight.kind);
 		jsonReply.append(item);

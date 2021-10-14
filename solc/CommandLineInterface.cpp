@@ -854,9 +854,9 @@ void CommandLineInterface::handleAst()
 bool CommandLineInterface::serveLSP()
 {
 	std::unique_ptr<ofstream> traceLog;
-	if (m_args.count("lsp-trace"))
-		traceLog = make_unique<ofstream>(m_args.at("lsp-trace").as<string>(), std::ios::app);
-	else
+//	if (m_args.count("lsp-trace"))
+//		traceLog = make_unique<ofstream>(m_args.at("lsp-trace").as<string>(), std::ios::app);
+//	else
 		traceLog = make_unique<ofstream>("/tmp/solc.lsp.log", std::ios::app);
 
 	auto const traceLevel = lsp::Trace::Messages;
