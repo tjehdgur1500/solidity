@@ -136,8 +136,6 @@ protected:
 		trace(fmt::format(_msg, std::forward<Args>(_args)...));
 	}
 
-	void logNotImplemented(std::string_view _message);
-
 	bool compile(std::string const& _path);
 
 	frontend::ASTNode const* requestASTNode(DocumentPosition _filePos);

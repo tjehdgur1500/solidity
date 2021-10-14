@@ -377,12 +377,6 @@ vector<DocumentHighlight> LanguageServer::semanticHighlight(ASTNode const* _sour
 	return output;
 }
 
-void LanguageServer::logNotImplemented(string_view _message)
-{
-	if (m_trace > Trace::Off && m_logger)
-		m_logger(fmt::format("Not implemented. {}", _message));
-}
-
 bool LanguageServer::run()
 {
 	while (!m_exitRequested && !m_client->closed())
