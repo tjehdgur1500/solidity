@@ -507,7 +507,11 @@ bool CommandLineInterface::readInputFiles()
 			m_fileReader.setStdin(readUntilEnd(m_sin));
 	}
 
-	if (m_fileReader.sourceCodes().empty() && !m_standardJsonInput.has_value())
+	if (
+		m_options.input.mode != InputMode::LanguageServer &&
+		m_fileReader.sourceCodes().empty() &&
+		!m_standardJsonInput.has_value()
+	)
 	{
 		serr() << "All specified input files either do not exist or are not regular files." << endl;
 		return false;
@@ -613,6 +617,8 @@ bool CommandLineInterface::processInput()
 	case InputMode::Compiler:
 	case InputMode::CompilerWithASTImport:
 		return compile();
+	case InputMode::LanguageServer:
+		return serveLSP();
 	}
 
 	solAssert(false, "");
@@ -887,10 +893,11 @@ bool CommandLineInterface::serveLSP()
 
 bool CommandLineInterface::actOnInput()
 {
-	// TODO(pr)
-	// if (m_args.count("lsp"))
-	// 	serveLSP();
-	if (m_options.input.mode == InputMode::StandardJson || m_options.input.mode == InputMode::Assembler)
+	if (
+		m_options.input.mode == InputMode::StandardJson ||
+		m_options.input.mode == InputMode::Assembler ||
+		m_options.input.mode == InputMode::LanguageServer
+	)
 		// Already done in "processInput" phase.
 		return true;
 	else if (m_options.input.mode == InputMode::Linker)
