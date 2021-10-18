@@ -139,7 +139,7 @@ optional<JSONTransport::HeaderMap> JSONTransport::parseHeaders()
 		getline(m_input, line);
 		if (boost::trim_copy(line).empty())
 			break;
-	{
+
 		auto const delimiterPos = line.find(':');
 		if (delimiterPos == string::npos)
 			return nullopt;

@@ -860,29 +860,24 @@ void CommandLineInterface::handleAst()
 bool CommandLineInterface::serveLSP()
 {
 	std::unique_ptr<ofstream> traceLog;
-//	if (m_args.count("lsp-trace"))
-//		traceLog = make_unique<ofstream>(m_args.at("lsp-trace").as<string>(), std::ios::app);
-//	else
-		traceLog = make_unique<ofstream>("/tmp/solc.lsp.log", std::ios::app);
+	if (!m_options.lsp.trace.empty())
+		traceLog = make_unique<ofstream>(m_options.lsp.trace.string(), std::ios::app);
+	else
+		traceLog = make_unique<ofstream>(boost::filesystem::temp_directory_path() / "solc.lsp.log", std::ios::app);
 
 	auto const traceLevel = lsp::Trace::Messages;
 
 	auto const traceLogger = [&traceLog](string_view _msg)
 	{
-		solAssert(traceLog, "");
-		*traceLog << _msg << endl;
+		if (traceLog)
+			*traceLog << _msg << endl;
 	};
 
 	std::unique_ptr<lsp::Transport> transport = make_unique<lsp::JSONTransport>(traceLevel, traceLogger);
 #if defined(SOLC_LSP_TCP)
-	if (m_args.count("lsp-port"))
+	if (m_options.lsp.port.has_value())
 	{
-		unsigned const port = m_args.at("lsp-port").as<unsigned>();
-		if (port > 0xFFFF)
-		{
-			sout() << "LSP port number not in valid port range. " << endl;
-			return false;
-		}
+		unsigned const port = m_options.lsp.port.value();
 		transport = make_unique<lsp::LSPTCPTransport>(static_cast<unsigned short>(port), traceLevel, traceLogger);
 	}
 #endif

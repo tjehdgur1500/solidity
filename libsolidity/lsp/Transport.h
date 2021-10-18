@@ -102,9 +102,6 @@ protected:
 	/// Used by the notify/reply/error function family.
 	virtual void send(Json::Value _message, MessageID _id = Json::nullValue);
 
-	/// Parses a single text line from the client ending with CRLF (or just LF).
-	std::string readLine();
-
 	/// Parses header section from the client including message-delimiting empty line.
 	std::optional<HeaderMap> parseHeaders();
 

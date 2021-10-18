@@ -224,6 +224,14 @@ struct CommandLineOptions
 
 	struct
 	{
+		boost::filesystem::path trace;
+#if defined(SOLC_LSP_TCP)
+		std::optional<unsigned> port;
+#endif
+	} lsp;
+
+	struct
+	{
 		bool initialize = false;
 		ModelCheckerSettings settings;
 	} modelChecker;
