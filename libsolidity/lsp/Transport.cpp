@@ -129,24 +129,16 @@ void JSONTransport::traceMessage(Json::Value const& _message, string_view _title
 		m_trace(string(_title) + ": " + solidity::util::jsonPrettyPrint(_message));
 }
 
-string JSONTransport::readLine()
-{
-	string line;
-
-	getline(m_input, line);
-
-	// Calling getline() trims the LF already, but if a CRLF is passed, the CR needs to be trimmed off, too.
-	if (!line.empty() && line.back() == '\r')
-		line.resize(line.size() - 1);
-
-	return line;
-}
-
 optional<JSONTransport::HeaderMap> JSONTransport::parseHeaders()
 {
 	HeaderMap headers;
 
-	for (string line = readLine(); !line.empty(); line = readLine())
+	while (true)
+	{
+		string line;
+		getline(m_input, line);
+		if (boost::trim_copy(line).empty())
+			break;
 	{
 		auto const delimiterPos = line.find(':');
 		if (delimiterPos == string::npos)
