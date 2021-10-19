@@ -97,7 +97,6 @@ protected:
 	 */
 	std::string symbolHoverInformation(frontend::ASTNode const* _node);
 
-	// {{{ Client-to-Server messages
 	/// Invoked when the server user-supplied configuration changes (initiated by the client).
 	void changeConfiguration(Json::Value const&);
 
@@ -110,7 +109,6 @@ protected:
 	///
 	/// @returns all references as document ranges as well as their use kind (read fraom, written to, other text).
 	std::vector<langutil::SourceLocation> references(DocumentPosition _documentPosition);
-	// }}}
 
 	/// Logs a message (should be used for logging messages that are informationally useful to the client).
 	void log(std::string _message);
@@ -155,7 +153,7 @@ protected:
 
 	std::string pathToSourceUnitName(std::string const& _path) const;
 
-	// {{{ LSP related member fields
+	// LSP related member fields
 	using Handler = std::function<void(MessageID, Json::Value const&)>;
 	using HandlerMap = std::unordered_map<std::string, Handler>;
 
@@ -165,7 +163,6 @@ protected:
 	bool m_exitRequested = false;
 	Trace m_trace = Trace::Off;
 	std::function<void(std::string_view)> m_logger;
-	// }}}
 
 	/// FileReader is used for reading files during comilation phase but is also used as VFS for the LSP.
 	std::unique_ptr<frontend::FileReader> m_fileReader;

@@ -46,7 +46,7 @@ using namespace solidity::frontend;
 namespace solidity::lsp
 {
 
-namespace // {{{ helpers
+namespace
 {
 
 Json::Value toJson(LineColumn _pos)
@@ -95,7 +95,7 @@ vector<Declaration const*> allAnnotatedDeclarations(Identifier const* _identifie
 	return output;
 }
 
-} // }}} end helpers
+}
 
 LanguageServer::LanguageServer(Logger _logger, unique_ptr<Transport> _transport):
 	m_client{move(_transport)},
