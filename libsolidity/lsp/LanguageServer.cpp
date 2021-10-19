@@ -458,7 +458,7 @@ void LanguageServer::handleTextDocumentDidOpen(MessageID /*_id*/, Json::Value co
 	auto const text = _args["textDocument"]["text"].asString();
 	string path = _args["textDocument"]["uri"].asString();
 	m_fileReader->setSource(path, text);
-	compileSourceAndReport(path);
+	compileSourceAndReport(m_fileReader->cliPathToSourceUnitName(path));
 }
 
 void LanguageServer::handleTextDocumentDidChange(MessageID /*_id*/, Json::Value const& _args)
