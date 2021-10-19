@@ -148,11 +148,6 @@ Json::Value LanguageServer::toJson(SourceLocation const& _location) const
 	return item;
 }
 
-string LanguageServer::pathToSourceUnitName(string const& _path) const
-{
-	return m_fileReader->cliPathToSourceUnitName(_path);
-}
-
 void LanguageServer::changeConfiguration(Json::Value const& _settings)
 {
 	m_settingsObject = _settings;
@@ -162,11 +157,11 @@ bool LanguageServer::compile(string const& _path)
 {
 	// TODO: optimize! do not recompile if nothing has changed (file(s) not flagged dirty).
 
-	if (m_fileReader->sourceCodes().count(pathToSourceUnitName(_path)))
+	if (!m_files.count(_path))
 	{
-		log("source code not found for path: " + _path + "(translated to " + pathToSourceUnitName(_path) + ")");
-		log(fmt::format("Available: {}", m_fileReader->sourceCodes().size()));
-		for (auto const& x: m_fileReader->sourceCodes())
+		log("source code not found for path: " + _path);
+		log(fmt::format("Available: {}", m_files.size()));
+		for (auto const& x: m_files)
 		{
 			log(fmt::format(" - file: {}", x.first));
 		}
@@ -174,11 +169,32 @@ bool LanguageServer::compile(string const& _path)
 	}
 
 	m_compilerStack.reset();
-	// TODO do we actually need the feature of reading from the filesystem?
-	m_compilerStack = make_unique<CompilerStack>(bind(&FileReader::readFile, ref(*m_fileReader), _1, _2));
+	m_compilerStack = make_unique<CompilerStack>(
+		[this](string const& _kind, string const& _path) {
+			if (_kind != ReadCallback::kindString(ReadCallback::Kind::ReadFile))
+				solAssert(false, "ReadFile callback used as callback kind " + _kind);
+			string strippedPath = _path;
+			if (strippedPath.find("file://") == 0)
+				strippedPath.erase(0, 7);
+
+			try
+			{
+				auto contents = readFileAsString(strippedPath);
+				solAssert(!m_files.count(_path));
+				m_files[_path] = move(contents);
+				return ReadCallback::Result{true, contents};
+			}
+			catch(...)
+			{
+				return ReadCallback::Result{false, "File not found."};
+			}
+
+		}
+	);
+
 
 	StandardCompiler::InputsAndSettings inputsAndSettings = m_inputsAndSettings;
-	inputsAndSettings.sources = m_fileReader->sourceCodes();
+	inputsAndSettings.sources = m_files;
 	StandardCompiler::configure(inputsAndSettings, *m_compilerStack);
 
 	m_compilerStack->compile(CompilerStack::State::AnalysisPerformed);
@@ -191,7 +207,6 @@ void LanguageServer::compileSourceAndReport(string const& _path)
 	compile(_path);
 
 	Json::Value params;
-	// TODO translate back?
 	params["uri"] = _path;
 
 	params["diagnostics"] = Json::arrayValue;
@@ -234,15 +249,14 @@ ASTNode const* LanguageServer::requestASTNode(DocumentPosition _filePos)
 	if (!m_compilerStack)
 		compile(_filePos.path);
 
-	string sourceUnitName = pathToSourceUnitName(_filePos.path);
-	if (!m_fileReader->sourceCodes().count(sourceUnitName))
+	if (!m_files.count(_filePos.path))
 		return nullptr;
 
 	if (!m_compilerStack || m_compilerStack->state() < CompilerStack::AnalysisPerformed)
 		return nullptr;
 
-	SourceUnit const& sourceUnit = m_compilerStack->ast(sourceUnitName);
-	auto const sourcePos = m_compilerStack->charStream(sourceUnitName).translateLineColumnToPosition(_filePos.position.line, _filePos.position.column);
+	SourceUnit const& sourceUnit = m_compilerStack->ast(_filePos.path);
+	auto const sourcePos = m_compilerStack->charStream(_filePos.path).translateLineColumnToPosition(_filePos.position.line, _filePos.position.column);
 	if (!sourcePos.has_value())
 		return nullptr;
 
@@ -292,7 +306,7 @@ vector<SourceLocation> LanguageServer::references(DocumentPosition _documentPosi
 	if (!sourceNode)
 		return {};
 
-	SourceUnit const& sourceUnit = m_compilerStack->ast(pathToSourceUnitName(_documentPosition.path));
+	SourceUnit const& sourceUnit = m_compilerStack->ast(_documentPosition.path);
 	vector<SourceLocation> output;
 	if (auto const* identifier = dynamic_cast<Identifier const*>(sourceNode))
 	{
@@ -317,7 +331,7 @@ vector<DocumentHighlight> LanguageServer::semanticHighlight(ASTNode const* _sour
 	if (!sourceNode)
 		return {};
 
-	SourceUnit const& sourceUnit = m_compilerStack->ast(pathToSourceUnitName(_path));
+	SourceUnit const& sourceUnit = m_compilerStack->ast(_path);
 
 	vector<DocumentHighlight> output;
 	if (auto const* declaration = dynamic_cast<Declaration const*>(sourceNode))
@@ -416,9 +430,6 @@ void LanguageServer::handleInitialize(MessageID _id, Json::Value const& _args)
 	}
 
 	log("root path: " + rootPath);
-	m_basePath = boost::filesystem::path(rootPath);
-	std::vector<boost::filesystem::path> includePaths;
-	m_fileReader = make_unique<FileReader>(m_basePath, includePaths, FileReader::FileSystemPathSet{m_basePath});
 	if (_args["initializationOptions"].isObject())
 		changeConfiguration(_args["initializationOptions"]);
 
@@ -455,10 +466,9 @@ void LanguageServer::handleTextDocumentDidOpen(MessageID /*_id*/, Json::Value co
 	if (!_args["textDocument"])
 		return;
 
-	auto const text = _args["textDocument"]["text"].asString();
 	string path = _args["textDocument"]["uri"].asString();
-	m_fileReader->setSource(path, text);
-	compileSourceAndReport(m_fileReader->cliPathToSourceUnitName(path));
+	m_files[path] = _args["textDocument"]["text"].asString();
+	compileSourceAndReport(path);
 }
 
 void LanguageServer::handleTextDocumentDidChange(MessageID /*_id*/, Json::Value const& _args)
@@ -471,13 +481,13 @@ void LanguageServer::handleTextDocumentDidChange(MessageID /*_id*/, Json::Value 
 		if (!jsonContentChange.isObject()) // Protocol error, will only happen on broken clients, so silently ignore it.
 			continue;
 
-		if (!m_fileReader->sourceCodes().count(m_fileReader->cliPathToSourceUnitName(path)))
+		if (!m_files.count(path))
 			continue;
 
 		string text = jsonContentChange["text"].asString();
 		if (!jsonContentChange["range"].isObject()) // full content update
 		{
-			m_fileReader->setSource(path, move(text));
+			m_files[path] = text;
 			continue;
 		}
 
@@ -487,7 +497,7 @@ void LanguageServer::handleTextDocumentDidChange(MessageID /*_id*/, Json::Value 
 		int const endLine = jsonRange["end"]["line"].asInt();
 		int const endColumn = jsonRange["end"]["character"].asInt();
 
-		string buffer = m_fileReader->sourceCodes().at(m_fileReader->cliPathToSourceUnitName(path));
+		string buffer = m_files.at(path);
 		optional<int> const startOpt = CharStream::translateLineColumnToPosition(buffer, startLine, startColumn);
 		optional<int> const endOpt = CharStream::translateLineColumnToPosition(buffer, endLine, endColumn);
 		if (!startOpt || !endOpt)
@@ -496,7 +506,7 @@ void LanguageServer::handleTextDocumentDidChange(MessageID /*_id*/, Json::Value 
 		size_t const start = static_cast<size_t>(startOpt.value());
 		size_t const count = static_cast<size_t>(endOpt.value()) - start; // TODO: maybe off-by-1 bug? +1 missing?
 		buffer.replace(start, count, move(text));
-		m_fileReader->setSource(path, move(buffer));
+		m_files[path] = move(buffer);
 	}
 
 	if (!contentChanges.empty())
@@ -528,7 +538,7 @@ void LanguageServer::handleGotoDefinition(MessageID _id, Json::Value const& _arg
 	else if (auto const* importDirective = dynamic_cast<ImportDirective const*>(sourceNode))
 	{
 		auto const& path = *importDirective->annotation().absolutePath;
-		if (m_fileReader->sourceCodes().count(path))
+		if (m_files.count(path))
 			locations.emplace_back(SourceLocation{0, 0, make_shared<string const>(path)});
 	}
 	else if (auto const* declaration = dynamic_cast<Declaration const*>(sourceNode))
@@ -554,18 +564,18 @@ string LanguageServer::symbolHoverInformation(ASTNode const* _sourceNode)
 		if (documented->documentation())
 			return *documented->documentation()->text();
 	}
-	else if (auto const* identifier = dynamic_cast<Identifier const*>(_sourceNode))
+	if (auto const* identifier = dynamic_cast<Identifier const*>(_sourceNode))
 	{
 		if (Type const* type = identifier->annotation().type)
 			return type->toString(false);
 	}
-	else if (auto const* identifierPath = dynamic_cast<IdentifierPath const*>(_sourceNode))
+	if (auto const* identifierPath = dynamic_cast<IdentifierPath const*>(_sourceNode))
 	{
 		Declaration const* decl = identifierPath->annotation().referencedDeclaration;
 		if (decl && decl->type())
 			return decl->type()->toString(false);
 	}
-	else if (auto const* memberAccess = dynamic_cast<MemberAccess const*>(_sourceNode))
+	if (auto const* memberAccess = dynamic_cast<MemberAccess const*>(_sourceNode))
 	{
 		if (memberAccess->annotation().type)
 			return memberAccess->annotation().type->toString(false);

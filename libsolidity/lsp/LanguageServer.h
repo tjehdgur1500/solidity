@@ -151,8 +151,6 @@ protected:
 	Json::Value toRange(langutil::SourceLocation const& _location) const;
 	Json::Value toJson(langutil::SourceLocation const& _location) const;
 
-	std::string pathToSourceUnitName(std::string const& _path) const;
-
 	// LSP related member fields
 	using Handler = std::function<void(MessageID, Json::Value const&)>;
 	using HandlerMap = std::unordered_map<std::string, Handler>;
@@ -164,11 +162,7 @@ protected:
 	Trace m_trace = Trace::Off;
 	std::function<void(std::string_view)> m_logger;
 
-	/// FileReader is used for reading files during comilation phase but is also used as VFS for the LSP.
-	std::unique_ptr<frontend::FileReader> m_fileReader;
-
-	/// Workspace root directory
-	boost::filesystem::path m_basePath;
+	std::map<std::string, std::string> m_files;
 
 	std::unique_ptr<frontend::CompilerStack> m_compilerStack;
 	Json::Value m_settingsObject;
