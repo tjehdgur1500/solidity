@@ -79,6 +79,11 @@ public:
 	/// @return boolean indicating normal or abnormal termination.
 	bool run();
 
+	/// Initiates the main event loop to terminate as soon as possible.
+	void terminate();
+
+	Transport& transport() { return *m_client; }
+
 protected:
 	void handleInitialize(MessageID _id, Json::Value const& _args);
 	void handleExit(MessageID _id, Json::Value const& _args);

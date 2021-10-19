@@ -455,7 +455,7 @@ void LanguageServer::handleWorkspaceDidChangeConfiguration(MessageID, Json::Valu
 
 void LanguageServer::handleExit(MessageID _id, Json::Value const& /*_args*/)
 {
-	m_exitRequested = true;
+	terminate();
 	Json::Value replyArgs = Json::intValue;
 	replyArgs = m_shutdownRequested ? 0 : 1;
 	m_client->reply(_id, replyArgs);
@@ -667,6 +667,11 @@ void LanguageServer::trace(string const& _message)
 {
 	//if (m_trace >= Trace::Verbose && m_logger)
 		m_logger(_message);
+}
+
+void LanguageServer::terminate()
+{
+	m_exitRequested = true;
 }
 
 } // namespace solidity
