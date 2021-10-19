@@ -150,8 +150,10 @@ protected:
 	);
 
 	DocumentPosition extractDocumentPosition(Json::Value const& _json) const;
+	Json::Value toRange(langutil::SourceLocation const& _location) const;
 	Json::Value toJson(langutil::SourceLocation const& _location) const;
-	Json::Value toJson(boost::filesystem::path const& _basePath, langutil::SourceLocation const& _location);
+
+	std::string pathToSourceUnitName(std::string const& _path) const;
 
 	// {{{ LSP related member fields
 	using Handler = std::function<void(MessageID, Json::Value const&)>;

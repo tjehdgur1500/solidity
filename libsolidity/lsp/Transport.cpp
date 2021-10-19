@@ -125,7 +125,7 @@ void JSONTransport::send(Json::Value _json, MessageID _id)
 
 void JSONTransport::traceMessage(Json::Value const& _message, string_view _title)
 {
-	if (m_traceLevel >= Trace::Verbose && m_trace)
+	//if (m_traceLevel >= Trace::Verbose && m_trace)
 		m_trace(string(_title) + ": " + solidity::util::jsonPrettyPrint(_message));
 }
 

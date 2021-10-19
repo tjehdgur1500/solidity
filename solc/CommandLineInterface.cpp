@@ -865,7 +865,7 @@ bool CommandLineInterface::serveLSP()
 	else
 		traceLog = make_unique<ofstream>(boost::filesystem::temp_directory_path() / "solc.lsp.log", std::ios::app);
 
-	auto const traceLevel = lsp::Trace::Messages;
+	auto const traceLevel = lsp::Trace::Verbose;
 
 	auto const traceLogger = [&traceLog](string_view _msg)
 	{
