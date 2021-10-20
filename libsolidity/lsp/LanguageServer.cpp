@@ -567,7 +567,14 @@ string LanguageServer::symbolHoverInformation(ASTNode const* _sourceNode)
 	if (auto const* identifier = dynamic_cast<Identifier const*>(_sourceNode))
 	{
 		if (Type const* type = identifier->annotation().type)
-			return type->toString(false);
+		{
+			stringstream md;
+			md << "## " << type->toString(false) << "\n";
+			md << "\n";
+			md << "TODO(pr): add natspec documentation here.\n";
+			// TODO(pr): find declaring AST node to extract NatSpec documentation
+			return md.str();
+		}
 	}
 	if (auto const* identifierPath = dynamic_cast<IdentifierPath const*>(_sourceNode))
 	{

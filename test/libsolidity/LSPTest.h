@@ -28,8 +28,7 @@ private:
 	static int registerTestCases(
 		boost::unit_test::test_suite& _suite,
 		boost::filesystem::path const& _basePath,
-		boost::filesystem::path const& _path,
-		std::vector<std::unique_ptr<std::string const>>& _filenames
+		boost::filesystem::path const& _path
 	);
 
 	boost::filesystem::path m_path;

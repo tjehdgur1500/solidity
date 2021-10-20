@@ -98,6 +98,7 @@ LSPTest::LSPTest(fs::path _path): m_path{std::move(_path)}
 
 LSPTest::TestResult LSPTest::run(std::ostream& _output)
 {
+	fmt::print("\nLSPTest.run! {}\n", m_path.string());
 	auto const fileContents = util::readFileAsString(m_path);
 	std::string errorString;
 	Json::Value json;
@@ -135,7 +136,7 @@ LSPTest::TestResult LSPTest::run(std::ostream& _output)
 	);
 	static_cast<MockTransport&>(lsp.transport()).onClose = [&]() { lsp.terminate(); };
 
-	return TestResult::Failure; // TBD
+	return TestResult::Success; // TBD
 }
 
 void lspTestCase(fs::path _testCaseFile)
@@ -174,15 +175,13 @@ void lspTestCase(fs::path _testCaseFile)
 int LSPTest::registerTestCases(boost::unit_test::test_suite& _suite)
 {
 	auto const& options = solidity::test::CommonOptions::get();
-	vector<unique_ptr<string const>> filenames;
-	return registerTestCases(_suite, options.testPath, fs::path("libsolidity") / "lsp", filenames);
+	return registerTestCases(_suite, options.testPath, fs::path("libsolidity") / "lsp");
 }
 
 int LSPTest::registerTestCases(
 	boost::unit_test::test_suite& _suite,
 	fs::path const& _basePath,
-	fs::path const& _path,
-	std::vector<std::unique_ptr<std::string const>>& _filenames
+	fs::path const& _path
 )
 {
 	fs::path const fullPath = _basePath / _path;
@@ -192,31 +191,38 @@ int LSPTest::registerTestCases(
 	{
 		boost::unit_test::test_suite* subTestSuite = BOOST_TEST_SUITE(_path.filename().string());
 		for (auto const& entry: boost::iterator_range<fs::directory_iterator>(
-			fs::directory_iterator(_path),
+			fs::directory_iterator(fullPath),
 			fs::directory_iterator()
 		))
 		{
-			if ((fs::is_regular_file(fullPath) && fullPath.extension().string() == "json") ||
-				fs::is_directory(entry.path())
+			auto const pathToChild = entry.path();
+			if ((fs::is_regular_file(pathToChild) && pathToChild.extension().string() == ".json") ||
+				fs::is_directory(pathToChild)
 			)
+			{
 				numTestsAdded += registerTestCases(
 					*subTestSuite,
 					_basePath,
-					_path / entry.path().filename(),
-					_filenames
+					_path / entry.path().filename()
 				);
+			}
 		}
 		_suite.add(subTestSuite);
 	}
 	else
 	{
+		// This must be a vector of unique_ptrs because Boost.Test keeps the equivalent of a string_view to the filename
+		// that is passed in. If the strings were stored directly in the vector, pointers/references to them would be
+		// invalidated on reallocation.
+		static vector<unique_ptr<string const>> filenames;
+		filenames.emplace_back(make_unique<string>(_path.string()));
+		auto const testCaseName = (_path.parent_path() / _path.stem()).string(); // strip off file extension
 		auto testCase = boost::unit_test::make_test_case(
 			[fullPath] { BOOST_REQUIRE_NO_THROW({ lspTestCase(fullPath); }); },
-			_path.stem().string(),  // test-case name
-			*_filenames.back(),     // test-case file name
-			0                       // test-case line number
+			_path.stem().string(), // test-case name
+			*filenames.back(),     // test-case file name
+			0                      // test-case line number
 		);
-		_filenames.emplace_back(make_unique<string>(_path.string()));
 		_suite.add(testCase);
 	}
 	return numTestsAdded;
