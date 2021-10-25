@@ -7,6 +7,7 @@
 #include <libsolutil/JSON.h>
 #include <libsolutil/CommonIO.h>
 
+#include <range/v3/view/iota.hpp>
 #include <boost/filesystem.hpp>
 
 #include <memory>
@@ -21,10 +22,47 @@ namespace solidity::frontend::test
 namespace
 {
 
+string diff(std::string const& _a, std::string const& _b)
+{
+	string difftool = getenv("DIFFTOOL") ? getenv("DIFFTOOL") : "";
+#if !defined(_WIN32)
+	if (difftool.empty())
+		difftool = "diff -u";
+#endif
+
+	auto const base = fs::unique_path(fs::temp_directory_path() / fs::path("%%%%-%%%%-%%%%-%%%%"));
+	auto const a = base.parent_path() / fs::path(base.stem().string() + ".a.json");
+	auto const b = base.parent_path() / fs::path(base.stem().string() + ".b.json");
+
+	auto const cleanupFile1 = ScopeGuard{[&] { fs::remove(a); }};
+	auto const cleanupFile2 = ScopeGuard{[&] { fs::remove(b); }};
+
+	ofstream(a.generic_string()) << _a;
+	ofstream(b.generic_string()) << _b;
+
+	auto const cmdline = fmt::format("{difftool} \"{file1}\" \"{file2}\"",
+		fmt::arg("difftool", difftool),
+		fmt::arg("file1", a.string()),
+		fmt::arg("file2", b.string())
+	);
+
+	FILE* fp = ::popen(cmdline.c_str(), "r");
+	if (!fp)
+		return "";
+	auto const cleanupStdoutHandle = ScopeGuard{[&] { pclose(fp); }};
+
+	ostringstream output;
+	char buf[32] = {0};
+	size_t n = 0;
+	while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
+		output << string_view(buf, n);
+	return output.str();
+}
+
 class MockTransport: public lsp::Transport
 {
 public:
-	std::function<void()> onClose = [](){};
+	std::function<void()> onClose = []{};
 
 	explicit MockTransport(std::vector<Json::Value> _requests):
 		m_requests{std::move(_requests)}
@@ -43,6 +81,12 @@ public:
 		if (m_readOffset < m_requests.size())
 		{
 			Json::Value value = m_requests.at(m_readOffset++);
+			tracelog(
+				"MockTransport Client -> Server: {}/{}\n\033[32m{}\033[m\n",
+				m_readOffset,
+				m_requests.size(),
+				jsonPrettyPrint(value)
+			);
 			if (m_readOffset == m_requests.size())
 				m_terminate();
 			return value;
@@ -80,14 +124,22 @@ private:
 		if (!_id.isNull())
 			_json["id"] = _id;
 
+		tracelog("MockTransport Server -> Client:\n\033[36m{}\033[m\n", jsonPrettyPrint(_json));
 		m_replies.push_back(_json);
+	}
+
+	template <typename... Args>
+	void tracelog(Args... _args)
+	{
+		if (getenv("TRACE") && *getenv("TRACE") != '0')
+			fmt::print(std::forward<Args>(_args)...);
 	}
 
 private:
 	std::vector<Json::Value> m_requests;
 	size_t m_readOffset = 0;
 	std::vector<Json::Value> m_replies;
-	std::function<void()> m_terminate;
+	std::function<void()> m_terminate = []{};
 };
 
 } // end anonymous namespace
@@ -98,7 +150,6 @@ LSPTest::LSPTest(fs::path _path): m_path{std::move(_path)}
 
 LSPTest::TestResult LSPTest::run(std::ostream& _output)
 {
-	fmt::print("\nLSPTest.run! {}\n", m_path.string());
 	auto const fileContents = util::readFileAsString(m_path);
 	std::string errorString;
 	Json::Value json;
@@ -116,34 +167,58 @@ LSPTest::TestResult LSPTest::run(std::ostream& _output)
 	std::vector<Json::Value> requests;
 	std::vector<Json::Value> expectedReplies;
 
-	for (int i = 0; i < static_cast<int>(json.size()); ++i)
+	for (auto const i: ranges::views::iota(0, static_cast<int>(json.size())))
 	{
 		requests.push_back(json[i]["request"]);
+		if (Json::Value output = json[i]["response"]; output.isArray())
+			for (int k = 0; k < static_cast<int>(output.size()); ++k)
+				expectedReplies.push_back(output[k]);
+	}
 
-		Json::Value output = json[i]["response"];
-		if (output.isArray())
+	lsp::LanguageServer lsp([](auto) {} /* debug log */, make_unique<MockTransport>(requests));
+	MockTransport& transport = static_cast<MockTransport&>(lsp.transport());
+	transport.onClose = [&lsp] { lsp.terminate(); };
+
+	lsp.run();
+
+	vector<Json::Value> const& replies = transport.replies();
+	for (auto const i: ranges::views::iota(0u, min(replies.size(), expectedReplies.size())))
+	{
+		Json::Value actualReply = replies[i];
+		Json::Value expectedReply = expectedReplies[i];
+		auto const actualText = jsonPrettyPrint(actualReply);
+		auto const expectedText = jsonPrettyPrint(expectedReply);
+		if (actualText != expectedText)
 		{
-			for (size_t k = 0; k < output.size(); ++k)
-			{
-				expectedReplies.push_back(output[i]);
-			}
+			auto const diffMessage = diff(expectedText, actualText);
+			if (!diffMessage.empty())
+				_output << "Test " << i << " failed expectation in reply.\n" << diffMessage << '\n';
+			else
+				_output <<
+					"Test " << i << " failed reply expectation.\n" <<
+					"Expected:\n" << expectedText << '\n' <<
+					"Actual:\n" << actualText << '\n';
+			return TestResult::Failure;
 		}
 	}
 
-	lsp::LanguageServer lsp(
-		[&](auto message) { _output << message << '\n'; },
-		make_unique<MockTransport>(requests)
-	);
-	static_cast<MockTransport&>(lsp.transport()).onClose = [&]() { lsp.terminate(); };
+	if (replies.size() != expectedReplies.size())
+	{
+		_output << fmt::format(
+			"Expected {expected} number of replies from LSP but got {actual}.\n",
+			fmt::arg("expected", expectedReplies.size()),
+			fmt::arg("actual", replies.size())
+		);
+		return TestResult::Failure;
+	}
 
-	return TestResult::Success; // TBD
+	return TestResult::Success;
 }
 
 void lspTestCase(fs::path _testCaseFile)
 {
 	try
 	{
-		// TODO
 		auto testCase = std::make_unique<LSPTest>(_testCaseFile);
 		stringstream errorStream;
 		switch (testCase->run(errorStream))

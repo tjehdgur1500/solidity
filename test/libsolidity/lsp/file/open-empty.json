@@ -328,11 +328,11 @@
         },
         "initializationOptions": {},
         "locale": "en_US",
-        "processId": 31721,
+        "processId": 24863,
         "rootPath": "/home/trapni/work/solidity",
         "rootUri": "file:///home/trapni/work/solidity",
         "trace": "verbose",
-        "workDoneToken": "6f480a9c-9245-4260-b5dc-f996a1f943c6",
+        "workDoneToken": "fcab6000-e011-4332-ab38-3d52813946ca",
         "workspaceFolders": [
           {
             "name": "solidity",
@@ -371,8 +371,7 @@
       "jsonrpc": "2.0",
       "method": "initialized",
       "params": {}
-    },
-    "response": []
+    }
   },
   {
     "request": {
@@ -384,7 +383,58 @@
           "remappings": []
         }
       }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "method": "textDocument/didOpen",
+      "params": {
+        "textDocument": {
+          "languageId": "solidity",
+          "text": "// SPDX-License-Identifier: UNLICENSED\npragma solidity >=0.0.0;\ncontract C {\n}\n",
+          "uri": "file:///var/tmp/work/solidity/empty.sol",
+          "version": 1
+        }
+      }
     },
-    "response": []
+    "response": [
+      {
+        "jsonrpc": "2.0",
+        "method": "textDocument/publishDiagnostics",
+        "params": {
+          "diagnostics": [
+            {
+              "code": 3805,
+              "message": "This is a pre-release compiler version, please do not use it in production.",
+              "range": {
+                "end": {
+                  "character": 0,
+                  "line": 0
+                },
+                "start": {
+                  "character": 0,
+                  "line": 0
+                }
+              },
+              "severity": 2,
+              "source": "solc"
+            }
+          ],
+          "uri": "file:///var/tmp/work/solidity/empty.sol"
+        }
+      }
+    ]
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "method": "textDocument/didClose",
+      "params": {
+        "textDocument": {
+          "uri": "file:///var/tmp/work/solidity/empty.sol"
+        }
+      }
+    }
   }
 ]
