@@ -131,8 +131,8 @@ private:
 	template <typename... Args>
 	void tracelog(Args... _args)
 	{
-		if (getenv("TRACE") && *getenv("TRACE") != '0')
-			fmt::print(std::forward<Args>(_args)...);
+		//if (getenv("TRACE") && *getenv("TRACE") != '0')
+		fmt::print(std::forward<Args>(_args)...);
 	}
 
 private:
@@ -141,6 +141,38 @@ private:
 	std::vector<Json::Value> m_replies;
 	std::function<void()> m_terminate = []{};
 };
+
+void lspTestCase(fs::path _testCaseFile)
+{
+	try
+	{
+		auto testCase = std::make_unique<LSPTest>(_testCaseFile);
+		stringstream errorStream;
+		switch (testCase->run(errorStream))
+		{
+		case TestCase::TestResult::Success:
+			break;
+		case TestCase::TestResult::Failure:
+			BOOST_ERROR("Test expectation mismatch.\n" + errorStream.str());
+			break;
+		case TestCase::TestResult::FatalError:
+			BOOST_ERROR("Fatal error during test.\n" + errorStream.str());
+			break;
+		}
+	}
+	catch (boost::exception const& _e)
+	{
+		BOOST_ERROR("Exception during extracted test: " << boost::diagnostic_information(_e));
+	}
+	catch (std::exception const& _e)
+	{
+		BOOST_ERROR("Exception during extracted test: " << boost::diagnostic_information(_e));
+	}
+	catch (...)
+	{
+		BOOST_ERROR("Unknown exception during extracted test: " << boost::current_exception_diagnostic_information());
+	}
+}
 
 } // end anonymous namespace
 
@@ -213,38 +245,6 @@ LSPTest::TestResult LSPTest::run(std::ostream& _output)
 	}
 
 	return TestResult::Success;
-}
-
-void lspTestCase(fs::path _testCaseFile)
-{
-	try
-	{
-		auto testCase = std::make_unique<LSPTest>(_testCaseFile);
-		stringstream errorStream;
-		switch (testCase->run(errorStream))
-		{
-		case TestCase::TestResult::Success:
-			break;
-		case TestCase::TestResult::Failure:
-			BOOST_ERROR("Test expectation mismatch.\n" + errorStream.str());
-			break;
-		case TestCase::TestResult::FatalError:
-			BOOST_ERROR("Fatal error during test.\n" + errorStream.str());
-			break;
-		}
-	}
-	catch (boost::exception const& _e)
-	{
-		BOOST_ERROR("Exception during extracted test: " << boost::diagnostic_information(_e));
-	}
-	catch (std::exception const& _e)
-	{
-		BOOST_ERROR("Exception during extracted test: " << boost::diagnostic_information(_e));
-	}
-	catch (...)
-	{
-		BOOST_ERROR("Unknown exception during extracted test: " << boost::current_exception_diagnostic_information());
-	}
 }
 
 int LSPTest::registerTestCases(boost::unit_test::test_suite& _suite)
