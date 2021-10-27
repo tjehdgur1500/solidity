@@ -314,7 +314,7 @@ errorDefinition:
  * Using directive to bind library functions to types.
  * Can occur within contracts and libraries.
  */
-usingDirective: Using identifierPath For (Mul | typeName) Semicolon;
+usingDirective: Using (identifierPath | (LBrace identifierPath (Comma identifierPath)* RBrace) | Mul) For (Mul | typeName) Semicolon;
 /**
  * A type name can be an elementary type, a function type, a mapping type, a user-defined type
  * (e.g. a contract or struct) or an array type.
