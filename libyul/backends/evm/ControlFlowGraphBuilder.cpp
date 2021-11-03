@@ -425,7 +425,7 @@ Stack const& ControlFlowGraphBuilder::visitFunctionCall(FunctionCall const& _cal
 	yulAssert(m_currentBlock, "");
 
 	Stack const* output = nullptr;
-	bool terminates = false;
+	bool canContinue = true;
 	if (BuiltinFunction const* builtin = m_dialect.builtin(_call.functionName.name))
 	{
 		Stack inputs;
@@ -444,7 +444,7 @@ Stack const& ControlFlowGraphBuilder::visitFunctionCall(FunctionCall const& _cal
 			// operation
 			move(builtinCall)
 		}).output;
-		terminates = builtin->controlFlowSideEffects.terminatesOrReverts();
+		canContinue = builtin->controlFlowSideEffects.canContinue;
 	}
 	else
 	{
@@ -452,7 +452,6 @@ Stack const& ControlFlowGraphBuilder::visitFunctionCall(FunctionCall const& _cal
 		Stack inputs{FunctionCallReturnLabelSlot{_call}};
 		for (auto const& arg: _call.arguments | ranges::views::reverse)
 			inputs.emplace_back(std::visit(*this, arg));
-		// TODO incorporate side-effects (especially "does not continue")
 		output = &m_currentBlock->operations.emplace_back(CFG::Operation{
 			// input
 			std::move(inputs),
@@ -464,9 +463,9 @@ Stack const& ControlFlowGraphBuilder::visitFunctionCall(FunctionCall const& _cal
 			CFG::FunctionCall{_call.debugData, function, _call}
 		}).output;
 		// TODO what if it does not exist?
-		terminates = m_functionSideEffects.at(_call.functionName.name).terminatesOrReverts();
+		canContinue = m_functionSideEffects.at(_call.functionName.name).canContinue;
 	}
-	if (terminates)
+	if (!canContinue)
 	{
 		m_currentBlock->exit = CFG::BasicBlock::Terminated{};
 		m_currentBlock = &m_graph.makeBlock(debugDataOf(*m_currentBlock));
