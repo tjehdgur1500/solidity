@@ -65,7 +65,7 @@ TestCase::TestResult ControlFlowSideEffectsTest::run(ostream& _stream, string co
 		ControlFlowSideEffectsCollector(
 			EVMDialect::strictAssemblyForEVMObjects(langutil::EVMVersion()),
 			*obj.code
-		).functionSideEffects();
+		).functionSideEffectsNamed();
 
 	std::map<std::string, std::string> controlFlowSideEffectsStr;
 	for (auto&& [fun, effects]: sideEffects)
